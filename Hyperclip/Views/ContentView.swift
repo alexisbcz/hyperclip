@@ -52,6 +52,7 @@ struct ContentView: View {
         .sheet(item: $studio.publishing) { item in
             PublishSheet(projectID: item.projectID, export: item.export)
         }
+        .onOpenURL { url in Task { await Self.open(url, in: studio) } }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             Self.importDropped(providers, into: studio)
         }
@@ -60,6 +61,32 @@ struct ContentView: View {
             if ProcessInfo.processInfo.environment["HYPERCLIP_OPEN_SETTINGS"] != nil { openSettings() }
         }
         #endif
+    }
+
+    /// `hyperclip://<method>?<params>` runs any control method, then shows what it made:
+    /// `hyperclip://import?url=…`, `hyperclip://findClips?project=latest&count=5`, `hyperclip://show?project=…&clip=2`.
+    static func open(_ url: URL, in studio: Studio) async {
+        guard url.scheme == "hyperclip", let host = url.host() else { return }
+        let aliases = ["import": "importVideo", "open": "show", "find": "findClips", "export": "export", "transcribe": "transcribe"]
+        let method = aliases[host] ?? host
+        var params: [String: JSONValue] = [:]
+        for item in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
+            guard let value = item.value else { continue }
+            params[item.name] = item.name == "clips" || item.name == "accounts" ? .array(value.split(separator: ",").map { .string(String($0)) }) : .string(value)
+        }
+        do {
+            let result = try await ControlAPI.handle(ControlRequest(method: method, params: params))
+            if let id = result["id"]?.string.flatMap(UUID.init(uuidString:)) {
+                studio.open(id)
+            } else if let project = params["project"]?.string, let found = try? ControlAPI.findProject(project) {
+                studio.open(found.id)
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't open that Hyperclip link"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     /// Video files dropped anywhere on the window become projects.

@@ -4,7 +4,14 @@ import UniformTypeIdentifiers
 
 @main
 struct HyperclipApp: App {
-    @State private var studio = Studio()
+    @State private var studio = Studio.shared
+
+    init() {
+        ControlAPI.start()
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { ControlAPI.stop() }
+        }
+    }
 
     var body: some Scene {
         Window("Hyperclip", id: "main") {
@@ -60,6 +67,9 @@ struct HyperclipApp: App {
                     .keyboardShortcut(.delete, modifiers: [.command])
                     .disabled(studio.selectedClip == nil)
             }
+            CommandGroup(after: .appSettings) {
+                Button("Install ‘hyperclip’ Command in PATH") { CommandLineTool.installShowingResult() }
+            }
             CommandGroup(after: .sidebar) {
                 Button("New") { studio.destination = .start }
                     .keyboardShortcut("1")
@@ -91,6 +101,8 @@ enum Destination: Hashable {
 /// The window's shared state: where you are, the selected clip, and the player.
 @Observable
 final class Studio {
+    static let shared = Studio()
+
     var destination: Destination? = .start {
         didSet {
             if case .project(let id) = destination, id != oldValue.projectID {

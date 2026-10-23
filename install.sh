@@ -84,6 +84,11 @@ uninstall() {
       quit_app
       rm -rf "$d/$APP_NAME.app"
       step "Removed $d/$APP_NAME.app"
+      for link in "$HOME/.local/bin/hyperclip" /opt/homebrew/bin/hyperclip /usr/local/bin/hyperclip; do
+        if [[ "$(readlink "$link" 2>/dev/null)" == "$d/$APP_NAME.app/"* ]] && rm -f "$link" 2>/dev/null; then
+          step "Removed $link"
+        fi
+      done
       removed=1
     fi
   done
@@ -179,6 +184,25 @@ after_install() {
   info "Whisper models download from Models & Tools the first time you need one."
 }
 
+# Links the `hyperclip` command into a writable folder on PATH, as the app's
+# Install 'hyperclip' Command in PATH does. Anything by that name that isn't Hyperclip's stays.
+link_cli() {
+  local app=$1 dir link
+  for dir in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin; do
+    case ":$PATH:" in *":$dir:"*) ;; *) continue ;; esac
+    [[ -d "$dir" && -w "$dir" ]] || continue
+    link="$dir/hyperclip"
+    if [[ -e "$link" || -L "$link" ]] && [[ "$(readlink "$link")" != *.app/Contents/Resources/bin/hyperclip ]]; then
+      warn "$link already exists and isn't Hyperclip's, so the command wasn't linked."
+      return
+    fi
+    ln -sf "$app/Contents/Resources/bin/hyperclip" "$link"
+    info "Linked the hyperclip command at $link; run \"hyperclip --help\" to see what it does."
+    return
+  done
+  info "To get the hyperclip command later, use Hyperclip > Install 'hyperclip' Command in PATH."
+}
+
 main() {
   local ref=main dest="" open=1 remove=0
   while (($#)); do
@@ -235,6 +259,7 @@ main() {
   rm -f "$log"
 
   after_install
+  link_cli "$dest/$APP_NAME.app"
 
   printf '\n%s%s is installed.%s Update it by running this script again.\n\n' "$GREEN$BOLD" "$APP_NAME" "$RESET"
   ((open)) && open "$dest/$APP_NAME.app"

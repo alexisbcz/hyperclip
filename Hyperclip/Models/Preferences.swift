@@ -51,6 +51,22 @@ nonisolated enum Pref {
     static let captionUppercase = "captions.uppercase"
     static let captionHighlight = "captions.highlight"
     static let captionPosition = "captions.position"
+    static let captionWeight = "captions.weight"
+    static let captionPunctuation = "captions.punctuation"
+    static let captionColor = "captions.color"
+    static let captionHighlightMode = "captions.highlightMode"
+    static let captionOutline = "captions.outline"
+    static let captionOutlineColor = "captions.outlineColor"
+    static let captionShadow = "captions.shadow"
+    static let captionBackground = "captions.background"
+    static let captionBackgroundColor = "captions.backgroundColor"
+    static let captionBackgroundOpacity = "captions.backgroundOpacity"
+    static let captionAnimate = "captions.animate"
+
+    /// Every caption setting, for resetting them together.
+    static let captionKeys = [captionStyle, captionFont, captionSize, captionWords, captionUppercase, captionHighlight, captionPosition,
+                              captionWeight, captionPunctuation, captionColor, captionHighlightMode, captionOutline, captionOutlineColor,
+                              captionShadow, captionBackground, captionBackgroundColor, captionBackgroundOpacity, captionAnimate]
 }
 
 nonisolated enum Defaults {

@@ -19,7 +19,7 @@ A native macOS app that turns long videos into short, captioned clips on your Ma
   - **Language model.** Reads the whole transcript and picks moments with titles, like an editor would. This works with Ollama or LM Studio on your Mac, or with any OpenAI-compatible API.
 - **Clip by hand.** Press **I** and **O** while the video plays, select words in the transcript, or drag a clip's edges on the timeline. Click any word to jump to it.
 - **Frames the speaker.** Vision tracks faces and crops to 9:16, 4:5 or 1:1. The crop holds still and only moves when the speaker does, the way a camera operator would. The preview shows the crop as it will export.
-- **Burns in captions** word by word, with the current word highlighted, in Bold, Clean, Boxed or One-word styles. You choose the font, size, color and position. The preview draws exactly what the export does.
+- **Burns in captions** word by word. Start from a style (Bold, Clean, Boxed, One word, Highlight box), then change any part of it: font, weight, size, text color, how the word being said stands out (its color, or a box behind it), outline thickness and color, shadow, a background box with its color and opacity, words per line, capitals, punctuation, position and the pop-in animation. The preview draws exactly what the export does.
 - **Publishes** to X, YouTube, TikTok, Instagram, LinkedIn, Facebook, Threads, Bluesky and more through [Zernio](https://zernio.com), now or on a schedule.
 
 ## Installation
@@ -30,7 +30,46 @@ curl -fsSL https://raw.githubusercontent.com/alexisbcz/hyperclip/main/install.sh
 
 This builds Hyperclip from source and installs it in Applications. It needs a Mac with Apple silicon, macOS 26 or later, and Xcode. If Homebrew is installed, the script also installs yt-dlp, FFmpeg and whisper.cpp. Otherwise, install them later from **Models & Tools** in the app.
 
-## Shortcuts
+## Automation
+
+Everything in the window can also be driven from outside. The app does the work, so whatever a script or an agent starts shows in the window as it happens.
+
+### The `hyperclip` command
+
+The install script links it, or use **Hyperclip › Install ‘hyperclip’ Command in PATH**. The command starts Hyperclip in the background if it isn't open.
+
+```sh
+hyperclip import https://www.youtube.com/watch?v=… --wait     # download, transcribe, find clips
+hyperclip clips latest                                         # numbered, scored, timed
+hyperclip transcript latest --from 12:00 --to 14:00            # what's said, with times
+hyperclip clip add latest 12:04 12:41 --title "The one thing"  # cut your own
+hyperclip export latest --best 3 --aspect vertical --captions bold --wait
+hyperclip publish latest --to youtube,tiktok --caption "…" --tiktok-consent
+hyperclip settings set captionHighlight "#34C759"             # any setting, by name
+```
+
+Add `--json` to any command to get output a script can read. Run `hyperclip --help` to see every command.
+
+### AI agents (MCP)
+
+`hyperclip mcp` is a Model Context Protocol server. Add it to Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI, VS Code and others in one click under **Settings › Agents**, or by hand:
+
+```json
+{ "mcpServers": { "hyperclip": { "command": "hyperclip", "args": ["mcp"] } } }
+```
+
+Agents get 21 tools, including `import_video`, `get_transcript`, `find_clips`, `list_clips`, `add_clip`, `update_clip`, `export_clips`, `publish`, `get_settings` and `set_setting`. Try asking: *"Import this video, find the five best moments about pricing, export them vertical with clean captions."*
+
+### Links and Shortcuts
+
+- **Links:** `hyperclip://<method>?…` runs any request, for example `hyperclip://import?url=…`, `hyperclip://find?project=latest&count=5` or `hyperclip://show?project=latest&clip=2`.
+- **Shortcuts:** the app adds **Clip a Video**, **Export the Best Clips** and **Get Clips** actions.
+
+### The socket
+
+The app listens on `~/Library/Application Support/Hyperclip/control.sock`, which only your user can open. It takes one JSON request per line, such as `{"method": "getProject", "params": {"project": "latest"}}`, and answers with `{"ok": true, "result": …}`. The methods are listed in [`Shared/Control.swift`](Shared/Control.swift). `hyperclip api <method> '<json>'` sends one from the terminal.
+
+## Keyboard shortcuts
 
 | Key | Action |
 |---|---|

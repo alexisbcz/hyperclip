@@ -58,9 +58,8 @@ nonisolated enum Transcriber {
     }
 
     /// Transcribes 16 kHz mono WAV into timed words. `progress` goes from 0 to 1.
-    static func transcribe(_ wav: URL, duration: Double, engine: TranscriptionEngine,
+    static func transcribe(_ wav: URL, duration: Double, engine: TranscriptionEngine, language: String?,
                            progress: @escaping @Sendable (Double) -> Void) async throws -> Transcript {
-        let language = Prefs.language
         let transcript: Transcript
         switch engine {
         case .apple: transcript = try await apple(wav, duration: duration, language: language, progress: progress)

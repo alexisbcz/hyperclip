@@ -180,7 +180,7 @@ nonisolated enum Exporter {
                 layer.add(show, forKey: "show")
 
                 // Each page pops in.
-                if index == 0, style.preset != .clean {
+                if index == 0, style.animate {
                     let pop = CAKeyframeAnimation(keyPath: "transform.scale")
                     let a = from / total, b = min(1, (from + 0.12) / total)
                     pop.values = [0.82, 0.82, 1, 1]

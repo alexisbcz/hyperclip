@@ -14,10 +14,21 @@ targets:
     platform: macOS
     sources:
       - path: Hyperclip
+        excludes:
+          - Info.plist
+      - path: Shared
+    dependencies:
+      # The `hyperclip` command line tool, at Contents/Resources/bin/hyperclip.
+      - target: hyperclip-cli
+        copy:
+          destination: resources
+          subpath: bin
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.alexis.Hyperclip
         GENERATE_INFOPLIST_FILE: YES
+        # The hyperclip:// URL scheme, which the generated Info.plist has no setting for.
+        INFOPLIST_FILE: Hyperclip/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Hyperclip
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.video
@@ -25,4 +36,17 @@ targets:
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_IDENTITY: "-"
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+  hyperclip-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Tools/hyperclip
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: hyperclip
+        PRODUCT_BUNDLE_IDENTIFIER: dev.alexis.Hyperclip.cli
+        CODE_SIGN_IDENTITY: "-"
+        SKIP_INSTALL: YES
         SWIFT_APPROACHABLE_CONCURRENCY: YES

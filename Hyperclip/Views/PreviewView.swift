@@ -10,14 +10,8 @@ struct PreviewView: View {
 
     @AppStorage(Pref.aspect) private var aspect = Aspect.vertical
     @AppStorage(Pref.framing) private var framing = Framing.speaker
-    // Read so the preview redraws when caption settings change.
-    @AppStorage(Pref.captionStyle) private var captionPreset = CaptionStyle.Preset.bold
-    @AppStorage(Pref.captionFont) private var captionFont = Defaults.captionFont
-    @AppStorage(Pref.captionSize) private var captionSize = Defaults.captionSize
-    @AppStorage(Pref.captionWords) private var captionWords = Defaults.captionWords
-    @AppStorage(Pref.captionUppercase) private var captionUppercase = true
-    @AppStorage(Pref.captionHighlight) private var captionHighlight = Defaults.captionHighlight
-    @AppStorage(Pref.captionPosition) private var captionPosition = Defaults.captionPosition
+    /// Bumped when any setting changes, so the captions redraw with the new look.
+    @State private var settingsChanged = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -35,6 +29,9 @@ struct PreviewView: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .background(.black)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
+            settingsChanged += 1
+        }
     }
 
     /// The selected clip if the playhead is in it, else whichever clip it's in.
@@ -71,7 +68,7 @@ struct PreviewView: View {
                     .allowsHitTesting(false)
             }
             if let clip {
-                CaptionLayer(project: project, clip: clip, time: studio.player.time, width: cropWidth, height: cropHeight)
+                CaptionLayer(project: project, clip: clip, time: studio.player.time, width: cropWidth, height: cropHeight, revision: settingsChanged)
                     .frame(width: cropWidth, height: cropHeight)
                     .offset(x: x, y: (fit.height - cropHeight) / 2)
                     .allowsHitTesting(false)
@@ -90,7 +87,7 @@ struct PreviewView: View {
                 .frame(width: videoSize.width, height: videoSize.height)
                 .offset(x: -x, y: -(videoSize.height - frame.height) / 2)
             if let clip {
-                CaptionLayer(project: project, clip: clip, time: studio.player.time, width: frame.width, height: frame.height)
+                CaptionLayer(project: project, clip: clip, time: studio.player.time, width: frame.width, height: frame.height, revision: settingsChanged)
                     .allowsHitTesting(false)
             }
         }
@@ -131,6 +128,8 @@ struct CaptionLayer: NSViewRepresentable {
     let time: Double
     let width: CGFloat
     let height: CGFloat
+    /// Changes with the settings, so SwiftUI redraws.
+    var revision = 0
 
     func makeNSView(context: Context) -> CaptionView { CaptionView() }
 
@@ -189,7 +188,7 @@ final class CaptionView: NSView {
             return
         }
         box.isHidden = false
-        let key = "\(page.start)-\(active ?? -1)-\(scale)-\(style.preset.rawValue)-\(style.font)-\(style.size)-\(style.uppercase)-\(style.highlight.hex)-\(style.position)-\(size)"
+        let key = "\(page.start)-\(page.words.count)-\(active ?? -1)-\(scale)-\(style.signature)-\(size)"
         guard key != shown else { return }
         shown = key
         let pixels = window?.backingScaleFactor ?? 2

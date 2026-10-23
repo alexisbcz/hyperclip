@@ -62,7 +62,7 @@ enum Snapshot {
                 studio.publishing = nil
             }
             if environment["HYPERCLIP_OPEN_SETTINGS"] != nil {
-                for tab in ["general", "downloads", "transcription", "finding", "captions", "appearance"] {
+                for tab in ["general", "downloads", "transcription", "finding", "captions", "publishing", "agents", "appearance"] {
                     UserDefaults.standard.set(tab, forKey: "settings.tab")
                     try? await Task.sleep(for: .seconds(1.2))
                     if let settings = NSApp.windows.first(where: { $0.isVisible && $0.frame.width <= 700 && $0.contentView != nil }),

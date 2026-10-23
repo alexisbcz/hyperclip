@@ -10,10 +10,11 @@ struct SettingsView: View {
         TabView(selection: $tab) {
             Tab("General", systemImage: "gearshape", value: "general") { GeneralSettings() }
             Tab("Downloads", systemImage: "arrow.down.circle", value: "downloads") { DownloadSettings() }
-            Tab("Transcription", systemImage: "captions.bubble", value: "transcription") { TranscriptionSettings() }
-            Tab("Clip Finding", systemImage: "sparkle.magnifyingglass", value: "finding") { FindingSettings() }
-            Tab("Captions & Export", systemImage: "textformat", value: "captions") { CaptionSettings() }
+            Tab("Transcribe", systemImage: "captions.bubble", value: "transcription") { TranscriptionSettings() }
+            Tab("Clips", systemImage: "sparkle.magnifyingglass", value: "finding") { FindingSettings() }
+            Tab("Captions", systemImage: "textformat", value: "captions") { CaptionSettings() }
             Tab("Publishing", systemImage: "paperplane", value: "publishing") { PublishingSettings() }
+            Tab("Agents", systemImage: "terminal", value: "agents") { AgentsSettings() }
             Tab("Appearance", systemImage: "paintpalette", value: "appearance") { AppearanceSettings() }
         }
     }
@@ -524,47 +525,104 @@ private struct CaptionSettings: View {
     @AppStorage(Pref.captionStyle) private var preset = CaptionStyle.Preset.bold
     @AppStorage(Pref.captionFont) private var font = Defaults.captionFont
     @AppStorage(Pref.captionSize) private var size = Defaults.captionSize
-    @AppStorage(Pref.captionWords) private var words = Defaults.captionWords
-    @AppStorage(Pref.captionUppercase) private var uppercase = true
-    @AppStorage(Pref.captionHighlight) private var highlight = Defaults.captionHighlight
     @AppStorage(Pref.captionPosition) private var position = Defaults.captionPosition
+    /// Bumped when any setting changes, so the controls that read the style redraw.
+    @State private var revision = 0
 
     var body: some View {
+        let style = CaptionStyle.current
         Form {
             SwiftUI.Section {
-                CaptionPreview()
+                CaptionPreview(revision: revision)
                     .listRowInsets(EdgeInsets())
             }
 
-            SwiftUI.Section("Captions") {
-                Picker("Style", selection: $preset) {
+            SwiftUI.Section {
+                Picker("Style", selection: Binding(get: { preset }, set: { CaptionStyle.apply($0) })) {
                     ForEach(CaptionStyle.Preset.allCases) { Text($0.name).tag($0) }
                 }
-                if preset != .none {
+                Text(preset.summary + (preset == .none ? "" : " Change anything below; picking a style again starts over from it."))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            if preset != .none {
+                SwiftUI.Section("Text") {
                     Picker("Font", selection: $font) {
-                        ForEach(Self.fonts, id: \.self) { Text($0).font(.custom($0, size: 13)).tag($0) }
+                        ForEach(Self.featured, id: \.self) { Text($0).font(.custom($0, size: 13)).tag($0) }
+                        Divider()
+                        ForEach(Self.families.filter { !Self.featured.contains($0) }, id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Weight", selection: string(Pref.captionWeight, style.weight.rawValue)) {
+                        ForEach(CaptionStyle.Weight.allCases) { Text($0.label).tag($0.rawValue) }
                     }
                     LabeledContent("Size") {
                         HStack {
-                            Slider(value: $size, in: 40...120, step: 2).frame(width: 200)
-                            Text("\(Int(size))").monospacedDigit().foregroundStyle(.secondary).frame(width: 30)
+                            Slider(value: $size, in: 30...160, step: 2).frame(width: 200)
+                            TextField("", value: $size, format: .number).frame(width: 44).multilineTextAlignment(.trailing)
                         }
                     }
-                    if preset != .pop {
-                        Stepper("\(words) word\(words == 1 ? "" : "s") at a time", value: $words, in: 1...8)
+                    Stepper("\(style.wordsPerPage) word\(style.wordsPerPage == 1 ? "" : "s") at a time",
+                            value: number(Pref.captionWords, Double(style.wordsPerPage)), in: 1...10)
+                    Toggle("Capital letters", isOn: flag(Pref.captionUppercase, style.uppercase))
+                    Toggle("Keep punctuation", isOn: flag(Pref.captionPunctuation, style.punctuation))
+                }
+
+                SwiftUI.Section("Colors") {
+                    ColorPicker("Text", selection: color(Pref.captionColor, style.color), supportsOpacity: false)
+                    Picker("Word being said", selection: string(Pref.captionHighlightMode, style.highlightMode.rawValue)) {
+                        ForEach(CaptionStyle.HighlightMode.allCases) { Text($0.label).tag($0.rawValue) }
                     }
-                    Toggle("Capital letters", isOn: $uppercase)
-                    ColorPicker("Word being said", selection: Binding(
-                        get: { Color(nsColor: NSColor(hex: highlight) ?? .systemYellow) },
-                        set: { highlight = NSColor($0).hex }
-                    ), supportsOpacity: false)
+                    if style.highlightMode != .none {
+                        ColorPicker(style.highlightMode == .box ? "Box color" : "Its color", selection: color(Pref.captionHighlight, style.highlight), supportsOpacity: false)
+                    }
+                    HStack(spacing: 8) {
+                        Text("Swatches").foregroundStyle(.secondary)
+                        Spacer()
+                        ForEach(Self.swatches, id: \.self) { hex in
+                            Button {
+                                UserDefaults.standard.set(hex, forKey: Pref.captionHighlight)
+                            } label: {
+                                Circle().fill(Color(nsColor: NSColor(hex: hex) ?? .white)).frame(width: 18, height: 18)
+                                    .overlay(Circle().strokeBorder(.black.opacity(0.15)))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Word being said: \(hex)")
+                        }
+                    }
+                }
+
+                SwiftUI.Section("Outline and Background") {
+                    LabeledContent("Outline") {
+                        HStack {
+                            Slider(value: number(Pref.captionOutline, style.outline), in: 0...40).frame(width: 180)
+                            Text(style.outline < 0.5 ? "None" : "\(Int(style.outline))").monospacedDigit().foregroundStyle(.secondary).frame(width: 36)
+                        }
+                    }
+                    if style.outline >= 0.5 {
+                        ColorPicker("Outline color", selection: color(Pref.captionOutlineColor, style.outlineColor), supportsOpacity: false)
+                    }
+                    Toggle("Shadow", isOn: flag(Pref.captionShadow, style.shadow))
+                    Toggle("Box behind the caption", isOn: flag(Pref.captionBackground, style.background))
+                    if style.background {
+                        ColorPicker("Box color", selection: color(Pref.captionBackgroundColor, style.backgroundColor), supportsOpacity: false)
+                        LabeledContent("Box opacity") {
+                            HStack {
+                                Slider(value: number(Pref.captionBackgroundOpacity, style.backgroundOpacity), in: 0.1...1).frame(width: 180)
+                                Text("\(Int(style.backgroundOpacity * 100))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 40)
+                            }
+                        }
+                    }
+                }
+
+                SwiftUI.Section("Placement") {
                     LabeledContent("Position") {
                         HStack {
                             Text("Top").foregroundStyle(.secondary)
-                            Slider(value: $position, in: 0.12...0.9).frame(width: 180)
+                            Slider(value: $position, in: 0.1...0.92).frame(width: 180)
                             Text("Bottom").foregroundStyle(.secondary)
                         }
                     }
+                    Toggle("Pop in", isOn: flag(Pref.captionAnimate, style.animate))
                 }
             }
 
@@ -584,8 +642,7 @@ private struct CaptionSettings: View {
                 HStack {
                     Spacer()
                     Button("Reset to Defaults") {
-                        for key in [Pref.captionStyle, Pref.captionFont, Pref.captionSize, Pref.captionWords, Pref.captionUppercase,
-                                    Pref.captionHighlight, Pref.captionPosition, Pref.aspect, Pref.framing, Pref.resolution] {
+                        for key in Pref.captionKeys + [Pref.aspect, Pref.framing, Pref.resolution] {
                             UserDefaults.standard.removeObject(forKey: key)
                         }
                     }
@@ -593,22 +650,45 @@ private struct CaptionSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 600, height: 760)
+        .frame(width: 600, height: 780)
+        .id(revision)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
+            let signature = CaptionStyle.current.signature
+            if signature != lastSignature {
+                lastSignature = signature
+                revision += 1
+            }
+        }
     }
 
-    static let fonts = ["Helvetica Neue", "SF Pro Display", "Avenir Next", "Futura", "Montserrat", "Inter", "Arial Rounded MT Bold",
-                        "Impact", "Georgia", "Menlo"].filter { NSFontManager.shared.availableFontFamilies.contains($0) || $0 == "SF Pro Display" }
+    @State private var lastSignature = ""
+
+    // Bindings straight to a preference, starting from the style's value when it hasn't been set.
+    private func flag(_ key: String, _ value: Bool) -> Binding<Bool> {
+        Binding(get: { value }, set: { UserDefaults.standard.set($0, forKey: key) })
+    }
+
+    private func number(_ key: String, _ value: Double) -> Binding<Double> {
+        Binding(get: { value }, set: { UserDefaults.standard.set($0, forKey: key) })
+    }
+
+    private func string(_ key: String, _ value: String) -> Binding<String> {
+        Binding(get: { value }, set: { UserDefaults.standard.set($0, forKey: key) })
+    }
+
+    private func color(_ key: String, _ value: NSColor) -> Binding<Color> {
+        Binding(get: { Color(nsColor: value) }, set: { UserDefaults.standard.set(NSColor($0).hex, forKey: key) })
+    }
+
+    static let featured = ["Helvetica Neue", "SF Pro Display", "Avenir Next", "Futura", "Montserrat", "Inter", "Arial Rounded MT Bold",
+                           "Impact", "Georgia", "Menlo"].filter { NSFontManager.shared.availableFontFamilies.contains($0) || $0 == "SF Pro Display" }
+    static let families = NSFontManager.shared.availableFontFamilies.filter { !$0.hasPrefix(".") }.sorted()
+    static let swatches = ["#FFD60A", "#34C759", "#30D5C8", "#0A84FF", "#7C3AED", "#FF375F", "#FF9F0A", "#FFFFFF"]
 }
 
 /// A frame with captions as they'll look, redrawn as the settings change.
 private struct CaptionPreview: View {
-    @AppStorage(Pref.captionStyle) private var preset = CaptionStyle.Preset.bold
-    @AppStorage(Pref.captionFont) private var font = Defaults.captionFont
-    @AppStorage(Pref.captionSize) private var size = Defaults.captionSize
-    @AppStorage(Pref.captionWords) private var words = Defaults.captionWords
-    @AppStorage(Pref.captionUppercase) private var uppercase = true
-    @AppStorage(Pref.captionHighlight) private var highlight = Defaults.captionHighlight
-    @AppStorage(Pref.captionPosition) private var position = Defaults.captionPosition
+    var revision: Int
     @AppStorage(Pref.aspect) private var aspect = Aspect.vertical
 
     private static let sample: [Word] = "Nobody tells you this about building a company".split(separator: " ").enumerated().map { index, word in
@@ -621,8 +701,7 @@ private struct CaptionPreview: View {
         let width = height * ratio
         let clip = Clip(start: 0, end: 4, title: "", origin: .manual)
         let style = CaptionStyle.current
-        let pages = CaptionPage.pages(for: Self.sample, clip: clip, perPage: style.wordsPerPage)
-        let page = pages.first
+        let page = CaptionPage.pages(for: Self.sample, clip: clip, perPage: style.wordsPerPage).first
         HStack {
             Spacer()
             ZStack {
@@ -632,7 +711,7 @@ private struct CaptionPreview: View {
                     .foregroundStyle(.white.opacity(0.14))
                     .offset(y: height * 0.08)
                 CaptionPreviewLayer(page: page, active: 1, size: CGSize(width: width, height: height))
-                    .id("\(preset)\(font)\(size)\(words)\(uppercase)\(highlight)\(position)\(aspect)")
+                    .id("\(style.signature)\(aspect)\(revision)")
             }
             .frame(width: width, height: height)
             .clipShape(.rect(cornerRadius: 12))

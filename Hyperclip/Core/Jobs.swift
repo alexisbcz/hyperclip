@@ -110,14 +110,14 @@ final class Jobs {
 
     // MARK: Transcription
 
-    func transcribe(_ id: UUID) {
+    func transcribe(_ id: UUID, engine: TranscriptionEngine? = nil, language: String? = nil) {
         start(id) {
-            try await self.runTranscription(id)
+            try await self.runTranscription(id, engine: engine, language: language)
             if Prefs.bool(Pref.autoFind, default: true), self.library.project(id)?.clips.isEmpty ?? true { try await self.runFinder(id) }
         }
     }
 
-    private func runTranscription(_ id: UUID) async throws {
+    private func runTranscription(_ id: UUID, engine chosen: TranscriptionEngine? = nil, language: String? = nil) async throws {
         guard let project = library.project(id), let media = project.media else { throw Exporter.Failure.noVideo }
         set(id, .analyze, detail: "Extracting the sound")
         let wav = Library.folder(of: id).appending(path: "audio.wav")
@@ -126,9 +126,9 @@ final class Jobs {
         defer { try? FileManager.default.removeItem(at: wav) }
         library.update(id) { $0.loudness = loudness }
 
-        let engine = TranscriptionEngine.current
+        let engine = chosen ?? .current
         set(id, .transcribe, progress: 0, detail: engine.title)
-        let transcript = try await Transcriber.transcribe(wav, duration: project.duration, engine: engine) { fraction in
+        let transcript = try await Transcriber.transcribe(wav, duration: project.duration, engine: engine, language: language ?? Prefs.language) { fraction in
             Task { @MainActor in Jobs.shared.set(id, .transcribe, progress: fraction, detail: engine.title) }
         }
         library.update(id) { $0.transcript = transcript }
@@ -136,15 +136,15 @@ final class Jobs {
 
     // MARK: Finding clips
 
-    func findClips(_ id: UUID) {
-        start(id) { try await self.runFinder(id) }
+    func findClips(_ id: UUID, settings: Finder.Settings? = nil) {
+        start(id) { try await self.runFinder(id, settings: settings) }
     }
 
-    private func runFinder(_ id: UUID) async throws {
+    private func runFinder(_ id: UUID, settings: Finder.Settings? = nil) async throws {
         guard let project = library.project(id), project.transcript != nil else { return }
-        let method = FinderMethod.current
-        set(id, .find, progress: nil, detail: method.title)
-        let found = try await Finder.find(in: project) { fraction, detail in
+        let settings = settings ?? .current
+        set(id, .find, progress: nil, detail: settings.method.title)
+        let found = try await Finder.find(in: project, settings: settings) { fraction, detail in
             Task { @MainActor in Jobs.shared.set(id, .find, progress: fraction, detail: detail) }
         }
         // New finds replace the old ones; clips you made or touched stay.
@@ -176,22 +176,21 @@ final class Jobs {
     // MARK: Export
 
     /// Queues clips for export, one at a time, since each already uses the whole media engine.
-    func export(_ projectID: UUID, clips clipIDs: [UUID]) {
+    func export(_ projectID: UUID, clips clipIDs: [UUID], options: Exporter.Options? = nil) {
         let previous = exportQueue
         for id in clipIDs where exporting[id] == nil { exporting[id] = 0 }
         exportQueue = Task {
             await previous?.value
             for clipID in clipIDs {
                 guard exporting[clipID] != nil else { continue }
-                await exportOne(projectID, clipID)
+                await exportOne(projectID, clipID, options: options ?? .current)
             }
         }
     }
 
-    private func exportOne(_ projectID: UUID, _ clipID: UUID) async {
+    private func exportOne(_ projectID: UUID, _ clipID: UUID, options: Exporter.Options) async {
         defer { exporting[clipID] = nil }
         guard let project = library.project(projectID), let clip = project.clip(clipID), let media = project.media else { return }
-        let options = Exporter.Options.current
         let destination = Exporter.destination(for: clip.title, project: project.title)
         let words = Array(project.transcript?.words(in: clip.range) ?? [])
         do {
