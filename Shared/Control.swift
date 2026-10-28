@@ -55,9 +55,9 @@ nonisolated enum ControlMethod: String, CaseIterable, Sendable {
     case getSettings
     /// Params: `key`, `value`. → the new settings.
     case setSetting
-    /// → Whisper models with `installed`, `selected`, `downloading`.
+    /// → Whisper and Liquid models with `kind` (whisper, decision, language), `installed`, `selected`, `downloading`.
     case listModels
-    /// Params: `model` (an id like large-v3-turbo-q5_0).
+    /// Params: `model` (an id like large-v3-turbo-q5_0 or d1-Omni-2B).
     case downloadModel
     /// Params: `project`. Stops what it's doing.
     case cancel

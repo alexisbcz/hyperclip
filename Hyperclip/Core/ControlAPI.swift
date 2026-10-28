@@ -234,17 +234,33 @@ enum ControlAPI {
             return ControlSettings.all
 
         case .listModels:
-            return .array(WhisperModel.all.map { model in
+            let whisper: [JSONValue] = WhisperModel.all.map { model in
                 [
-                    "id": .string(model.id), "name": .string(model.name), "size": .number(Double(model.size)),
+                    "id": .string(model.id), "name": .string(model.name), "kind": "whisper", "size": .number(Double(model.size)),
                     "installed": .bool(model.file != nil), "selected": .bool(model.file != nil && WhisperModel.selected == model),
                     "downloading": WhisperModels.shared.progress[model.id].map(JSONValue.number) ?? .null,
                 ]
-            })
+            }
+            let liquid: [JSONValue] = LiquidModel.all.map { model in
+                let inUse = model.role == .decision
+                    ? FinderMethod.current == .decision && Decision.Config.local == model
+                    : FinderMethod.current == .llm && LLM.Config.isLiquid
+                return [
+                    "id": .string(model.id), "name": .string(model.name), "kind": model.role == .decision ? "decision" : "language",
+                    "size": .number(Double(model.size)), "installed": .bool(model.isDownloaded), "selected": .bool(model.isDownloaded && inUse),
+                    "downloading": LiquidModels.shared.progress[model.id].map(JSONValue.number) ?? .null,
+                ]
+            }
+            return .array(whisper + liquid)
 
         case .downloadModel:
-            guard let id = params.string("model"), let model = WhisperModel.all.first(where: { $0.id == id }) else {
-                throw ControlError("Models: \(WhisperModel.all.map(\.id).joined(separator: ", ")).")
+            let id = params.string("model")
+            if let model = LiquidModel.all.first(where: { $0.id == id }) {
+                if !model.isDownloaded { LiquidModels.shared.download(model) }
+                return ["model": .string(model.id), "installed": .bool(model.isDownloaded)]
+            }
+            guard let model = WhisperModel.all.first(where: { $0.id == id }) else {
+                throw ControlError("Models: \((WhisperModel.all.map(\.id) + LiquidModel.all.map(\.id)).joined(separator: ", ")).")
             }
             if model.file == nil { WhisperModels.shared.download(model) }
             return ["model": .string(model.id), "installed": .bool(model.file != nil)]
@@ -526,6 +542,8 @@ enum ControlSettings {
         ("decisionPreset", Pref.decisionPreset, .choice(DecisionPreset.allCases.map(\.rawValue)), "typesafe"),
         ("decisionURL", Pref.decisionURL, .text, ""),
         ("decisionModel", Pref.decisionModel, .text, ""),
+        ("decisionLocalModel", Pref.decisionLocalModel, .choice(LiquidModel.decisionModels.map(\.id)), .string(LiquidModel.decisionModels[0].id)),
+        ("localPort", Pref.localPort, .number, 0),
     ]
 
     static var all: JSONValue {

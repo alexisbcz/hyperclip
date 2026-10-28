@@ -35,10 +35,14 @@ nonisolated enum Pref {
     static let decisionURL = "find.decision.url"
     static let decisionPath = "find.decision.path"
     static let decisionModel = "find.decision.model"
+    static let decisionLocalModel = "find.decision.localModel"
     static let llmPreset = "find.llm.preset"
     static let llmURL = "find.llm.url"
     static let llmModel = "find.llm.model"
     static let llmGuidance = "find.llm.guidance"
+    /// The llama-server Hyperclip runs for Liquid's models: where it is if not the one it installs, and its port (0 picks a free one).
+    static let llamaPath = "find.local.llamaPath"
+    static let localPort = "find.local.port"
 
     // Export and captions
     static let aspect = "export.aspect"

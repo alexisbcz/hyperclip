@@ -15,8 +15,9 @@ A native macOS app that turns long videos into short, captioned clips on your Ma
 - **Transcribes on your Mac.** You can use Apple's built-in on-device transcriber (nothing to install), or [Whisper](https://github.com/ggml-org/whisper.cpp) models on the GPU (detects the language, handles jargon). Any OpenAI-compatible server works too (OpenAI, Groq, Speaches, a Hypervoice server). Every word is timed.
 - **Finds the clips worth posting**, in one of three ways:
   - **Built-in (no AI).** Scores every span of whole sentences on its hook, its payoff, the pace and loudness of the delivery, and its length. Instant and offline.
-  - **Decision model.** Shortlists with the built-in scores, then asks a [Jev-compatible](https://docs.typesafe.ai) decision model typed questions about each clip: how strong the hook is, whether it stands on its own, how good the payoff is, and whether people would share it. It then weighs the probabilities into a score. This works with TypeSafe's Jev or with open models you host yourself (Laya, Von, Kev, AnyJev).
-  - **Language model.** Reads the whole transcript and picks moments with titles, like an editor would. This works with Ollama or LM Studio on your Mac, or with any OpenAI-compatible API.
+  - **Decision model.** Shortlists with the built-in scores, then asks a decision model typed questions about each clip: how strong the hook is, whether it stands on its own, how good the payoff is, and whether people would share it. It then weighs the probabilities into a score. Pick **Liquid d1** to run [d1-Omni-2B](https://huggingface.co/LiquidAI/d1-Omni-2B) on your Mac with nothing to set up: it also hears each clip and scores the delivery. d1-2B reads the transcript only. Any [Jev-compatible](https://docs.typesafe.ai) server works too: TypeSafe's Jev, or open models you host yourself (Laya, Von, Kev, AnyJev).
+  - **Language model.** Reads the whole transcript and picks moments with titles, like an editor would. Pick **Liquid LFM3** to run [LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B) on your Mac: it reads up to 128K tokens at once, so hours of talk fit in one go. Ollama, LM Studio and any OpenAI-compatible API work too.
+- **Runs Liquid's models for you.** The first time you use one, Hyperclip downloads llama.cpp ([b11960](https://github.com/ggml-org/llama.cpp/releases/tag/b11960), since Homebrew's is too old) and the model from Hugging Face, with progress under **Models & Tools**. It starts its own `llama-server` when a clip finder needs it and stops it when you quit, or after 10 minutes unused. Liquid's models are under the [LFM Open License v1.0](https://huggingface.co/LiquidAI/d1-2B/blob/main/LICENSE): free for individuals and for companies under $10M in yearly revenue.
 - **Clip by hand.** Press **I** and **O** while the video plays, select words in the transcript, or drag a clip's edges on the timeline. Click any word to jump to it.
 - **Frames the speaker.** Vision tracks faces and crops to 9:16, 4:5 or 1:1. The crop holds still and only moves when the speaker does, the way a camera operator would. The preview shows the crop as it will export.
 - **Burns in captions** word by word. Start from a style (Bold, Clean, Boxed, One word, Highlight box), then change any part of it: font, weight, size, text color, how the word being said stands out (its color, or a box behind it), outline thickness and color, shadow, a background box with its color and opacity, words per line, capitals, punctuation, position and the pop-in animation. The preview draws exactly what the export does.
@@ -28,7 +29,7 @@ A native macOS app that turns long videos into short, captioned clips on your Ma
 curl -fsSL https://raw.githubusercontent.com/alexisbcz/hyperclip/main/install.sh | bash
 ```
 
-This builds Hyperclip from source and installs it in Applications. It needs a Mac with Apple silicon, macOS 26 or later, and Xcode. If Homebrew is installed, the script also installs yt-dlp, FFmpeg and whisper.cpp. Otherwise, install them later from **Models & Tools** in the app.
+This builds Hyperclip from source and installs it in Applications. It needs a Mac with Apple silicon, macOS 26 or later, and Xcode. If Homebrew is installed, the script also installs yt-dlp, FFmpeg and whisper.cpp. Otherwise, install them later from **Models & Tools** in the app. llama.cpp, for Liquid's models, installs from the app.
 
 ## Automation
 
@@ -46,6 +47,8 @@ hyperclip clip add latest 12:04 12:41 --title "The one thing"  # cut your own
 hyperclip export latest --best 3 --aspect vertical --captions bold --wait
 hyperclip publish latest --to youtube,tiktok --caption "…" --tiktok-consent
 hyperclip settings set captionHighlight "#34C759"             # any setting, by name
+hyperclip settings set decisionPreset liquid                   # find clips with Liquid's d1, on this Mac
+hyperclip models download d1-Omni-2B --wait                    # Whisper and Liquid models
 ```
 
 Add `--json` to any command to get output a script can read. Run `hyperclip --help` to see every command.

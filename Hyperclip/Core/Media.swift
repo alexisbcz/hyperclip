@@ -118,6 +118,42 @@ nonisolated enum Media {
         return loudness
     }
 
+    /// Part of the sound as a 16 kHz mono, 16-bit WAV file in memory, for models that listen.
+    static func audioClip(_ url: URL, range: ClosedRange<Double>) async throws -> Data {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { throw Failure.noAudio }
+        let reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: range.lowerBound, preferredTimescale: 600),
+                                       end: CMTime(seconds: range.upperBound, preferredTimescale: 600))
+        let sampleRate = 16_000
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ])
+        reader.add(output)
+        guard reader.startReading() else { throw Failure.unreadable(reader.error?.localizedDescription ?? "unknown error") }
+        var samples = Data()
+        while let sample = output.copyNextSampleBuffer() {
+            guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
+            let length = CMBlockBufferGetDataLength(block)
+            var chunk = Data(count: length)
+            chunk.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
+            samples.append(chunk)
+        }
+        if reader.status == .failed { throw Failure.unreadable(reader.error?.localizedDescription ?? "unknown error") }
+
+        func bytes<T: FixedWidthInteger>(_ value: T) -> Data { withUnsafeBytes(of: value.littleEndian) { Data($0) } }
+        var wav = Data("RIFF".utf8) + bytes(UInt32(36 + samples.count)) + Data("WAVEfmt ".utf8)
+        wav += bytes(UInt32(16)) + bytes(UInt16(1)) + bytes(UInt16(1)) + bytes(UInt32(sampleRate)) + bytes(UInt32(sampleRate * 2))
+        wav += bytes(UInt16(2)) + bytes(UInt16(16)) + Data("data".utf8) + bytes(UInt32(samples.count)) + samples
+        return wav
+    }
+
     /// Mean square power to 0...1, from -50 dB up to full scale.
     private static func level(_ power: Float) -> Float {
         let decibels = 10 * log10(max(power, 1e-10))

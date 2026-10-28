@@ -334,6 +334,7 @@ private struct FindingSettings: View {
     @AppStorage(Pref.decisionURL) private var decisionURL = ""
     @AppStorage(Pref.decisionPath) private var decisionPath = ""
     @AppStorage(Pref.decisionModel) private var decisionModel = ""
+    @AppStorage(Pref.decisionLocalModel) private var decisionLocalModel = LiquidModel.decisionModels[0].id
     @AppStorage(Pref.llmPreset) private var llmPreset = LLMPreset.ollama
     @AppStorage(Pref.llmURL) private var llmURL = ""
     @AppStorage(Pref.llmModel) private var llmModel = ""
@@ -382,16 +383,30 @@ private struct FindingSettings: View {
                         decisionModel = ""
                         testResult = nil
                     }
-                    TextField("Address", text: $decisionURL, prompt: Text(decisionPreset.url))
-                    TextField("Endpoint", text: $decisionPath, prompt: Text(decisionPreset.path))
-                    TextField("Model", text: $decisionModel, prompt: Text(decisionPreset.model.isEmpty ? "As the server decides" : decisionPreset.model))
-                    KeyField(secret: .decision)
+                    if decisionPreset == .liquid {
+                        Picker("Model", selection: $decisionLocalModel) {
+                            ForEach(LiquidModel.decisionModels) { Text($0.name).tag($0.id) }
+                        }
+                        .onChange(of: decisionLocalModel) { testResult = nil }
+                        LiquidModelRow(model: LiquidModel.decision)
+                    } else {
+                        TextField("Address", text: $decisionURL, prompt: Text(decisionPreset.url))
+                        TextField("Endpoint", text: $decisionPath, prompt: Text(decisionPreset.path))
+                        TextField("Model", text: $decisionModel, prompt: Text(decisionPreset.model.isEmpty ? "As the server decides" : decisionPreset.model))
+                        KeyField(secret: .decision)
+                    }
                     testRow { try await Decision.test() }
                 } header: {
                     Text("Decision model")
                 } footer: {
-                    Text("Each shortlisted clip is sent as state, with four typed questions: a score for the hook, a yes/no on standing alone, a score for the payoff and a yes/no on being shared. Hyperclip weighs the probabilities into one score. Self-hosted models such as Laya or Von run on a CPU in about 2 GB.")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Each shortlisted clip is sent as state, with four typed questions: a score for the hook, a yes/no on standing alone, a score for the payoff and a yes/no on being shared. Hyperclip weighs the probabilities into one score. Self-hosted models such as Laya or Von run on a CPU in about 2 GB.")
+                        if decisionPreset == .liquid {
+                            Text("d1-Omni-2B also hears each clip and scores the delivery. Hyperclip downloads the model and llama.cpp the first time, then runs them on this Mac.")
+                            LiquidLicenceNote()
+                        }
+                    }
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -405,17 +420,31 @@ private struct FindingSettings: View {
                         llmModel = ""
                         testResult = nil
                     }
-                    TextField("Address", text: $llmURL, prompt: Text(llmPreset.url.isEmpty ? "https://…/v1" : llmPreset.url))
-                    TextField("Model", text: $llmModel, prompt: Text(llmPreset.model.isEmpty ? "The loaded model" : llmPreset.model))
-                    if !llmPreset.isLocal { KeyField(secret: .llm) }
+                    if llmPreset == .liquid {
+                        LiquidModelRow(model: LiquidModel.language)
+                    } else {
+                        TextField("Address", text: $llmURL, prompt: Text(llmPreset.url.isEmpty ? "https://…/v1" : llmPreset.url))
+                        TextField("Model", text: $llmModel, prompt: Text(llmPreset.model.isEmpty ? "The loaded model" : llmPreset.model))
+                        if !llmPreset.isLocal { KeyField(secret: .llm) }
+                    }
                     TextField("Look for", text: $guidance, prompt: Text("Funny moments, hot takes, practical tips…"), axis: .vertical)
                         .lineLimit(2...4)
                     testRow { try await LLM.test() }
                 } header: {
                     Text("Language model")
                 } footer: {
-                    Text(llmPreset == .ollama ? "Run `ollama pull qwen3:8b` first. Any model works; bigger ones pick better clips and titles." : "Any chat model behind an OpenAI-compatible /chat/completions endpoint.")
+                    switch llmPreset {
+                    case .liquid:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("LFM3-1.7B reads up to 128K tokens at once, hours of talk, so it sees the whole video. Hyperclip downloads the model and llama.cpp the first time, then runs them on this Mac.")
+                            LiquidLicenceNote()
+                        }
                         .foregroundStyle(.secondary)
+                    case .ollama:
+                        Text("Run `ollama pull qwen3:8b` first. Any model works; bigger ones pick better clips and titles.").foregroundStyle(.secondary)
+                    default:
+                        Text("Any chat model behind an OpenAI-compatible /chat/completions endpoint.").foregroundStyle(.secondary)
+                    }
                 }
             }
         }

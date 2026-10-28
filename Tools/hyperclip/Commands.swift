@@ -294,7 +294,7 @@ nonisolated extension Command {
         }
     }
 
-    static let models = Command(name: "models", arguments: "[download <id> [--wait]] [--json]", summary: "list Whisper models, or download one") { args in
+    static let models = Command(name: "models", arguments: "[download <id> [--wait]] [--json]", summary: "list Whisper and Liquid models, or download one") { args in
         let json = args.flag("--json"), wait = args.flag("--wait")
         if args.optionalNext() == "download" {
             let id = try args.next("model")
@@ -314,10 +314,10 @@ nonisolated extension Command {
         try args.done()
         let models = try App.call(.listModels)
         if json { return printJSON(models) }
-        printTable(["MODEL", "SIZE", "STATE"], (models.array ?? []).map { model in
+        printTable(["MODEL", "KIND", "SIZE", "STATE"], (models.array ?? []).map { model in
             let state = model["selected"]?.bool == true ? "in use" : model["installed"]?.bool == true ? "installed"
                 : model["downloading"]?.double.map { "downloading \(Int($0 * 100))%" } ?? "-"
-            return [model["id"]?.string ?? "", ByteCountFormatter.string(fromByteCount: Int64(model["size"]?.double ?? 0), countStyle: .file), state]
+            return [model["id"]?.string ?? "", model["kind"]?.string ?? "whisper", ByteCountFormatter.string(fromByteCount: Int64(model["size"]?.double ?? 0), countStyle: .file), state]
         })
     }
 

@@ -9,7 +9,10 @@ struct HyperclipApp: App {
     init() {
         ControlAPI.start()
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { ControlAPI.stop() }
+            MainActor.assumeIsolated {
+                ControlAPI.stop()
+                LlamaServer.shared.stop()
+            }
         }
     }
 
@@ -21,6 +24,8 @@ struct HyperclipApp: App {
                 .environment(Jobs.shared)
                 .environment(Tools.shared)
                 .environment(WhisperModels.shared)
+                .environment(LiquidModels.shared)
+                .environment(LlamaServer.shared)
                 .modifier(AppAppearance())
                 .frame(minWidth: 1160, minHeight: 680)
                 #if DEBUG
@@ -85,6 +90,8 @@ struct HyperclipApp: App {
             SettingsView()
                 .environment(Tools.shared)
                 .environment(WhisperModels.shared)
+                .environment(LiquidModels.shared)
+                .environment(LlamaServer.shared)
                 .modifier(AppAppearance())
         }
     }

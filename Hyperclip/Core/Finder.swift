@@ -25,8 +25,8 @@ nonisolated enum FinderMethod: String, CaseIterable, Identifiable, Sendable {
     var summary: String {
         switch self {
         case .heuristic: "Scores every span of whole sentences on its hook, its payoff, the pace and energy of the delivery and its length. Instant, offline, free."
-        case .decision: "Shortlists with the built-in scores, then asks a decision model typed questions about each one: how strong the hook is, whether it stands alone, how good the payoff is. Works with TypeSafe's Jev and the open models that speak its API, like Laya, Von or Kev, on your own machine."
-        case .llm: "Reads the whole transcript and picks moments like an editor would, with titles. Works with Ollama or LM Studio on this Mac, or any OpenAI-compatible API."
+        case .decision: "Shortlists with the built-in scores, then asks a decision model typed questions about each one: how strong the hook is, whether it stands alone, how good the payoff is. Runs Liquid's d1 on this Mac, which can also hear the delivery, or works with TypeSafe's Jev and the open models that speak its API, like Laya, Von or Kev."
+        case .llm: "Reads the whole transcript and picks moments like an editor would, with titles. Runs Liquid's LFM3 on this Mac, or works with Ollama, LM Studio or any OpenAI-compatible API."
         }
     }
 
@@ -43,13 +43,14 @@ nonisolated enum FinderMethod: String, CaseIterable, Identifiable, Sendable {
 
 /// A server for decision models: state and typed questions in, probabilities out.
 nonisolated enum DecisionPreset: String, CaseIterable, Identifiable, Sendable {
-    case typesafe, local, anyjev, custom
+    case typesafe, liquid, local, anyjev, custom
 
     var id: String { rawValue }
 
     var name: String {
         switch self {
         case .typesafe: "TypeSafe Jev"
+        case .liquid: "Liquid d1, on this Mac"
         case .local: "Self-hosted (Laya, Von, Kev…)"
         case .anyjev: "AnyJev"
         case .custom: "Custom"
@@ -60,6 +61,7 @@ nonisolated enum DecisionPreset: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .typesafe: "https://api.typesafe.ai"
         case .local, .anyjev, .custom: "http://localhost:8000"
+        case .liquid: ""
         }
     }
 
@@ -70,12 +72,13 @@ nonisolated enum DecisionPreset: String, CaseIterable, Identifiable, Sendable {
 
 /// A server for chat models that speaks OpenAI's API.
 nonisolated enum LLMPreset: String, CaseIterable, Identifiable, Sendable {
-    case ollama, lmstudio, openai, openrouter, custom
+    case liquid, ollama, lmstudio, openai, openrouter, custom
 
     var id: String { rawValue }
 
     var name: String {
         switch self {
+        case .liquid: "Liquid LFM3, on this Mac"
         case .ollama: "Ollama"
         case .lmstudio: "LM Studio"
         case .openai: "OpenAI"
@@ -90,7 +93,7 @@ nonisolated enum LLMPreset: String, CaseIterable, Identifiable, Sendable {
         case .lmstudio: "http://localhost:1234/v1"
         case .openai: "https://api.openai.com/v1"
         case .openrouter: "https://openrouter.ai/api/v1"
-        case .custom: ""
+        case .liquid, .custom: ""
         }
     }
 
@@ -100,11 +103,12 @@ nonisolated enum LLMPreset: String, CaseIterable, Identifiable, Sendable {
         case .lmstudio: ""
         case .openai: "gpt-5-mini"
         case .openrouter: "qwen/qwen3-235b-a22b"
+        case .liquid: LiquidModel.language.id
         case .custom: ""
         }
     }
 
-    var isLocal: Bool { self == .ollama || self == .lmstudio }
+    var isLocal: Bool { self == .ollama || self == .lmstudio || self == .liquid }
 }
 
 /// Finds the moments of a video worth posting on their own.
@@ -151,7 +155,7 @@ nonisolated enum Finder {
         case .decision:
             let shortlist = pick(scored, count: max(settings.count * 3, 12), overlap: 0.6)
             let excerpts = Dictionary(uniqueKeysWithValues: shortlist.map { ($0.id, transcript.text(in: $0.range)) })
-            let rescored = try await Decision.rescore(shortlist, excerpts: excerpts, title: project.title, progress: progress)
+            let rescored = try await Decision.rescore(shortlist, excerpts: excerpts, title: project.title, media: project.media, progress: progress)
             return pick(rescored, count: settings.count)
         case .llm:
             let picked = try await LLM.pick(sentences: sentences, title: project.title, settings: settings, progress: progress)
@@ -312,6 +316,8 @@ nonisolated enum Decision {
         var url: URL
         var model: String
         var key: String?
+        /// Whether the model hears each clip's sound as well as reading its words.
+        var hearsAudio = false
 
         static var current: Config? {
             let preset = Prefs.value(Pref.decisionPreset, default: DecisionPreset.typesafe)
@@ -320,6 +326,25 @@ nonisolated enum Decision {
             guard let url = URL(string: base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (path.hasPrefix("/") ? path : "/" + path)) else { return nil }
             return Config(url: url, model: Prefs.string(Pref.decisionModel) ?? preset.model, key: Secret.decision.value)
         }
+
+        /// Liquid's d1 when it's the one chosen, run by Hyperclip's own llama-server.
+        static var local: LiquidModel? {
+            Prefs.value(Pref.decisionPreset, default: DecisionPreset.typesafe) == .liquid ? LiquidModel.decision : nil
+        }
+    }
+
+    /// The server to ask, starting Hyperclip's own when the model runs on this Mac. Pair with `disconnect`.
+    private static func connect(progress: @escaping @Sendable (Double, String) -> Void) async throws -> Config {
+        if let model = Config.local {
+            let base = try await LlamaServer.shared.begin(model, progress: progress)
+            return Config(url: base.appending(path: "v1/systemone"), model: model.id, hearsAudio: model.hearsAudio)
+        }
+        guard let config = Config.current else { throw Finder.Failure.server("The decision model's address isn't a URL.") }
+        return config
+    }
+
+    private static func disconnect() async {
+        if Config.local != nil { await LlamaServer.shared.end() }
     }
 
     nonisolated(unsafe) static let questions: [String: Any] = [
@@ -348,52 +373,103 @@ nonisolated enum Decision {
         ],
     ]
 
-    static func rescore(_ clips: [Clip], excerpts: [UUID: String], title: String,
+    /// Asked as well when the model hears the clip.
+    nonisolated(unsafe) static let delivery: [String: Any] = [
+        "type": "score",
+        "instructions": "How lively and engaging is the speaker's delivery in the recording: energy, pace, emotion?",
+        "criteria": ["Flat or mumbled", "Calm and clear", "Engaged", "Energetic, gripping delivery"],
+    ]
+
+    /// The longest stretch of sound sent with a clip; its opening matters most, and longer passages lose accuracy.
+    static let listening = 100.0
+
+    static func rescore(_ clips: [Clip], excerpts: [UUID: String], title: String, media: URL?,
                         progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Clip] {
-        guard let config = Config.current else { throw Finder.Failure.server("The decision model's address isn't a URL.") }
+        let config = try await connect(progress: progress)
+        do {
+            let results = try await rescore(clips, excerpts: excerpts, title: title, media: config.hearsAudio ? media : nil, config: config, progress: progress)
+            await disconnect()
+            return results
+        } catch {
+            await disconnect()
+            throw error
+        }
+    }
+
+    private static func rescore(_ clips: [Clip], excerpts: [UUID: String], title: String, media: URL?, config: Config,
+                                progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Clip] {
         var done = 0
         var results: [Clip] = []
+        let asking = "Asking \(config.model.isEmpty ? "the decision model" : config.model)" + (media == nil ? "" : ", listening to each clip")
+        progress(0, asking)
         try await withThrowingTaskGroup(of: Clip.self) { group in
             var iterator = clips.makeIterator()
             func next() -> Bool {
                 guard let clip = iterator.next() else { return false }
-                group.addTask { try await ask(config, about: clip, excerpt: excerpts[clip.id] ?? clip.title, title: title) }
+                group.addTask { try await ask(config, about: clip, excerpt: excerpts[clip.id] ?? clip.title, title: title, media: media) }
                 return true
             }
             for _ in 0..<4 where next() {}
             while let clip = try await group.next() {
                 results.append(clip)
                 done += 1
-                progress(Double(done) / Double(clips.count), "Asking \(config.model.isEmpty ? "the decision model" : config.model)")
+                progress(Double(done) / Double(clips.count), asking)
                 _ = next()
             }
         }
         return results
     }
 
-    private static func ask(_ config: Config, about clip: Clip, excerpt: String, title: String) async throws -> Clip {
+    private static func ask(_ config: Config, about clip: Clip, excerpt: String, title: String, media: URL?) async throws -> Clip {
         var body: [String: Any] = [
             "state": ["video_title": title, "excerpt": excerpt, "duration_seconds": Int(clip.duration)],
             "questions": questions,
         ]
+        if let media {
+            let sound = try await Media.audioClip(media, range: clip.start...min(clip.end, clip.start + listening))
+            body["files"] = ["data:audio/wav;base64," + sound.base64EncodedString()]
+            body["questions"] = questions.merging(["delivery": delivery]) { $1 }
+        }
         if !config.model.isEmpty { body["model"] = config.model }
         let answers = try await post(config, body: body)
-        func value(_ id: String, _ field: String) -> Double? {
-            ((answers[id] as? [String: Any])?[field] as? NSNumber)?.doubleValue
-        }
-        let hook = (value("hook", "score") ?? 1.5) / 3
-        let standalone = value("standalone", "noul") ?? 0.5
-        let payoff = (value("payoff", "score") ?? 1.5) / 3
-        let shareable = value("shareable", "noul") ?? 0.5
+        let hook = level(answers, "hook") ?? 0.5
+        let standalone = yes(answers, "standalone") ?? 0.5
+        let payoff = level(answers, "payoff") ?? 0.5
+        let shareable = yes(answers, "shareable") ?? 0.5
         var clip = clip
-        clip.score = (100 * (0.35 * hook + 0.2 * standalone + 0.3 * payoff + 0.15 * shareable)).rounded()
         var reasons: [String] = []
-        if hook > 0.6 { reasons.append("Strong hook") }
+        if let delivery = level(answers, "delivery") {
+            clip.score = (100 * (0.3 * hook + 0.15 * standalone + 0.25 * payoff + 0.1 * shareable + 0.2 * delivery)).rounded()
+            if delivery > 0.6 { reasons.append("Lively delivery") } else if delivery < 0.35 { reasons.append("Flat delivery") }
+        } else {
+            clip.score = (100 * (0.35 * hook + 0.2 * standalone + 0.3 * payoff + 0.15 * shareable)).rounded()
+        }
+        if hook > 0.6 { reasons.insert("Strong hook", at: 0) }
         if standalone > 0.7 { reasons.append("Stands on its own") } else if standalone < 0.35 { reasons.append("Needs context") }
         if payoff > 0.6 { reasons.append("Memorable payoff") }
         if shareable > 0.6 { reasons.append("Likely to be shared") }
         clip.reasons = reasons.isEmpty ? ["Middling on every question"] : reasons
         return clip
+    }
+
+    /// A score question's answer from 0 to 1: the expected level when the server gives each level's probability,
+    /// which separates clips better than the median level alone.
+    static func level(_ answers: [String: Any], _ id: String) -> Double? {
+        guard let answer = answers[id] as? [String: Any] else { return nil }
+        if let probabilities = answer["probabilities"] as? [String: Any], probabilities.count > 1 {
+            let pairs = probabilities.compactMap { key, value in Int(key).flatMap { level in (value as? NSNumber).map { (Double(level), $0.doubleValue) } } }
+            if pairs.count == probabilities.count {
+                let total = pairs.reduce(0) { $0 + $1.1 }
+                if total > 0 { return pairs.reduce(0) { $0 + $1.0 * $1.1 } / total / Double(pairs.count - 1) }
+            }
+        }
+        let levels = (answer["legend"] as? [String: Any])?.count ?? 4
+        return ((answer["score"] as? NSNumber)?.doubleValue).map { $0 / Double(max(1, levels - 1)) }
+    }
+
+    /// A yes/no question's answer: the probability of yes.
+    static func yes(_ answers: [String: Any], _ id: String) -> Double? {
+        ((answers[id] as? [String: Any])?["noul"] as? NSNumber)?.doubleValue
     }
 
     private static func post(_ config: Config, body: [String: Any]) async throws -> [String: Any] {
@@ -415,14 +491,15 @@ nonisolated enum Decision {
 
     /// One small request, to check the address, model and key in Settings.
     static func test() async throws -> String {
-        guard let config = Config.current else { throw Finder.Failure.server("The address isn't a URL.") }
+        let config = try await connect { _, _ in }
+        defer { Task { await disconnect() } }
         var body: [String: Any] = [
             "state": "I can't believe nobody told me this before: you can save a third on groceries by doing one thing.",
             "questions": ["hook": questions["hook"]!],
         ]
         if !config.model.isEmpty { body["model"] = config.model }
         let answers = try await post(config, body: body)
-        let score = ((answers["hook"] as? [String: Any])?["score"] as? NSNumber)?.doubleValue
+        let score = level(answers, "hook").map { $0 * 3 }
         return score.map { "Connected. A sample hook scored \(String(format: "%.2f", $0)) out of 3." } ?? "Connected."
     }
 }
@@ -436,6 +513,8 @@ nonisolated enum LLM {
         var model: String
         var key: String?
         var isLocal: Bool
+        /// Liquid's LFM3, run by Hyperclip's own llama-server.
+        var isLiquid = false
 
         static var current: Config? {
             let preset = Prefs.value(Pref.llmPreset, default: LLMPreset.ollama)
@@ -444,14 +523,44 @@ nonisolated enum LLM {
             return Config(url: url, model: Prefs.string(Pref.llmModel) ?? preset.model, key: Secret.llm.value,
                           isLocal: url.host() == "localhost" || url.host() == "127.0.0.1")
         }
+
+        static var isLiquid: Bool { Prefs.value(Pref.llmPreset, default: LLMPreset.ollama) == .liquid }
+    }
+
+    /// The server to ask, starting Hyperclip's own for LFM3. Pair with `disconnect`.
+    private static func connect(progress: @escaping @Sendable (Double, String) -> Void) async throws -> Config {
+        if Config.isLiquid {
+            let model = LiquidModel.language
+            let base = try await LlamaServer.shared.begin(model, progress: progress)
+            return Config(url: base.appending(path: "v1/chat/completions"), model: model.id, isLocal: true, isLiquid: true)
+        }
+        guard let config = Config.current else { throw Finder.Failure.server("The language model's address isn't a URL.") }
+        return config
+    }
+
+    private static func disconnect() async {
+        if Config.isLiquid { await LlamaServer.shared.end() }
     }
 
     static func pick(sentences: [Sentence], title: String, settings: Finder.Settings,
                      progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Clip] {
-        guard let config = Config.current else { throw Finder.Failure.server("The language model's address isn't a URL.") }
+        let config = try await connect(progress: progress)
+        do {
+            let clips = try await pick(sentences: sentences, title: title, settings: settings, config: config, progress: progress)
+            await disconnect()
+            return clips
+        } catch {
+            await disconnect()
+            throw error
+        }
+    }
+
+    private static func pick(sentences: [Sentence], title: String, settings: Finder.Settings, config: Config,
+                             progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Clip] {
         let lines = sentences.map { "[\($0.index)] \($0.start.clock) \($0.text)" }
         // Local models often run with small contexts, so they read the transcript in smaller pieces.
-        let budget = config.isLocal ? 7_000 : 60_000
+        // LFM3 gets 128K tokens of it, so hours of transcript fit in one piece.
+        let budget = config.isLiquid ? 400_000 : config.isLocal ? 7_000 : 60_000
         var chunks: [[String]] = [[]]
         var size = 0
         for line in lines {
@@ -504,6 +613,14 @@ nonisolated enum LLM {
             "temperature": 0.4,
             "messages": [["role": "user", "content": prompt]],
         ]
+        if config.isLiquid {
+            // Liquid's recommended sampling for LFM3. Its reasoning runs to thousands of tokens on a long transcript
+            // and picks no better clips, so it answers straight away.
+            body["temperature"] = 0.1
+            body["top_k"] = 50
+            body["repeat_penalty"] = 1.1
+            body["chat_template_kwargs"] = ["enable_thinking": false]
+        }
         if json { body["response_format"] = ["type": "json_object"] }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -549,7 +666,8 @@ nonisolated enum LLM {
 
     /// One small request, to check the address, model and key in Settings.
     static func test() async throws -> String {
-        guard let config = Config.current else { throw Finder.Failure.server("The address isn't a URL.") }
+        let config = try await connect { _, _ in }
+        defer { Task { await disconnect() } }
         let reply = try await complete(config, prompt: "Reply with JSON only: {\"ok\": true}")
         return reply.contains("ok") ? "Connected to \(config.model.isEmpty ? "the model" : config.model)." : "Connected, but the model answered: \(reply.prefix(80))"
     }

@@ -224,7 +224,7 @@ nonisolated enum Tools {
     }
 
     static let all: [Tool] = [
-        .request("status", "Status", "Whether Hyperclip's tools are installed (yt-dlp, FFmpeg, whisper.cpp), the transcription engine and clip finding method in use, whether publishing is set up, and what's busy.",
+        .request("status", "Status", "Whether Hyperclip's tools are installed (yt-dlp, FFmpeg, whisper.cpp, llama.cpp), the transcription engine and clip finding method in use, whether publishing is set up, and what's busy.",
                  method: .status, readOnly: true),
 
         .request("list_projects", "List Videos", "Every video in Hyperclip, newest first: id, title, length, number of clips and exports, and whether it's busy.",
@@ -263,7 +263,7 @@ nonisolated enum Tools {
                  required: ["project"], readOnly: true),
 
         Tool(name: "find_clips", title: "Find Clips",
-             description: "Finds the moments worth posting and replaces earlier finds (clips made or edited by hand stay). method heuristic scores hooks, payoffs, pace and energy with no AI; decision asks a Jev-compatible decision model; llm asks a language model. Leave options out to use the app's settings.",
+             description: "Finds the moments worth posting and replaces earlier finds (clips made or edited by hand stay). method heuristic scores hooks, payoffs, pace and energy with no AI; decision asks a decision model (Liquid's d1 on this Mac, which also hears each clip, or a Jev-compatible server); llm asks a language model (Liquid's LFM3 on this Mac, or an OpenAI-compatible server). Leave options out to use the app's settings.",
              properties: [
                 "project": project,
                 "method": ["type": "string", "enum": ["heuristic", "decision", "llm"]],
@@ -337,15 +337,15 @@ nonisolated enum Tools {
                     "tiktokConsent": ["type": "boolean"],
                  ], required: ["export", "accounts", "caption"], timeout: 1800),
 
-        .request("get_settings", "Get Settings", "Hyperclip's settings: transcription engine and language, Whisper model, clip finding method and lengths, export shape, framing, resolution and caption style.",
+        .request("get_settings", "Get Settings", "Hyperclip's settings: transcription engine and language, Whisper model, clip finding method and lengths, the decision and language model servers (decisionPreset liquid and llmPreset liquid run Liquid's models on this Mac; decisionLocalModel picks d1-Omni-2B or d1-2B), export shape, framing, resolution and caption style.",
                  method: .getSettings, readOnly: true),
 
         .request("set_setting", "Change Setting", "Changes one setting by name (see get_settings), like captions to clean or engine to apple.",
                  method: .setSetting, properties: ["key": ["type": "string"], "value": ["type": ["string", "number", "boolean"]]], required: ["key", "value"]),
 
-        .request("list_models", "List Whisper Models", "Whisper models: which are downloaded, which is in use, and downloads in progress.", method: .listModels, readOnly: true),
+        .request("list_models", "List Models", "Whisper models for transcription and Liquid models for finding clips (d1-Omni-2B, d1-2B, LFM3-1.7B): which are downloaded, which are in use, and downloads in progress.", method: .listModels, readOnly: true),
 
-        .request("download_model", "Download Whisper Model", "Starts downloading a Whisper model by id, like large-v3-turbo-q5_0. Call list_models to follow it.",
+        .request("download_model", "Download Model", "Starts downloading a Whisper or Liquid model by id, like large-v3-turbo-q5_0 or d1-Omni-2B. Call list_models to follow it.",
                  method: .downloadModel, properties: ["model": ["type": "string"]], required: ["model"]),
 
         .request("cancel", "Cancel", "Stops what a video is busy with: downloading, transcribing or finding clips.", method: .cancel,
