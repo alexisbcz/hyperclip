@@ -86,28 +86,22 @@ nonisolated enum Exporter {
         let framing = clip.framing ?? options.framing
         let cropsWidth = geometry.crop.width < size.width - 1
         if cropsWidth, framing == .speaker {
-            let track: [Double]
-            if let saved = clip.track { track = saved } else { track = try await Reframer.track(media, range: start...end) }
-            // A ramp between each pair of samples that differ; a hold where they don't.
-            var index = 0
-            while index < track.count {
-                var next = index + 1
-                while next < track.count, abs(track[next] - track[index]) < 0.002 { next += 1 }
-                let from = CMTime(seconds: Double(index) * Clip.trackStep, preferredTimescale: 600)
-                let toIndex = min(next, track.count - 1)
-                let to = CMTime(seconds: min(duration.seconds, Double(toIndex) * Clip.trackStep), preferredTimescale: 600)
-                guard from < duration else { break }
-                if toIndex == index || to <= from {
-                    layer.setTransform(transform(center: track[index]), at: from)
-                } else if next - index > 1 {
-                    // Held still, then the move happens over the last step.
-                    let moveStart = CMTime(seconds: Double(toIndex - 1) * Clip.trackStep, preferredTimescale: 600)
-                    layer.setTransform(transform(center: track[index]), at: from)
-                    if moveStart < to { layer.setTransformRamp(fromStart: transform(center: track[index]), toEnd: transform(center: track[toIndex]), timeRange: CMTimeRange(start: moveStart, end: to)) }
-                } else {
-                    layer.setTransformRamp(fromStart: transform(center: track[index]), toEnd: transform(center: track[toIndex]), timeRange: CMTimeRange(start: from, end: to))
+            let track: SpeakerTrack
+            if let saved = clip.track { track = saved } else { track = try await Reframer.track(media, range: start...end, words: words) }
+            // Each shot starts where it's cut to, then ramps between samples that differ and holds where they don't,
+            // just as `Reframer.center(in:at:)` reads it for the preview.
+            for (index, cut) in ([0] + track.cuts).enumerated() where cut < duration.seconds {
+                let next = index < track.cuts.count ? track.cuts[index] : .infinity
+                let samples = Reframer.samples(in: Reframer.shot(at: cut, cuts: track.cuts), of: track)
+                layer.setTransform(transform(center: Reframer.center(in: track, at: cut)), at: CMTime(seconds: cut, preferredTimescale: 600))
+                for sample in samples.dropLast() where abs(track.centers[sample + 1] - track.centers[sample]) >= 0.002 {
+                    let from = max(cut, Double(sample) * Clip.trackStep)
+                    let to = min(next, duration.seconds, Double(sample + 1) * Clip.trackStep)
+                    guard to > from else { continue }
+                    layer.setTransformRamp(fromStart: transform(center: Reframer.center(in: track, at: from)),
+                                           toEnd: transform(center: Reframer.center(in: track, at: to)),
+                                           timeRange: CMTimeRange(start: CMTime(seconds: from, preferredTimescale: 600), end: CMTime(seconds: to, preferredTimescale: 600)))
                 }
-                index = next
             }
         } else {
             layer.setTransform(transform(center: 0.5), at: .zero)

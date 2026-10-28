@@ -160,9 +160,10 @@ final class Jobs {
     /// Tracks the speaker for a clip ahead of export, so the preview shows where the crop goes.
     func frame(_ projectID: UUID, clip clipID: UUID) {
         guard let project = library.project(projectID), let clip = project.clip(clipID), let media = project.media else { return }
+        let words = Array(project.transcript?.words(in: clip.range) ?? [])
         start(projectID) {
             self.set(projectID, .frame, progress: 0, detail: clip.title)
-            let track = try await Reframer.track(media, range: clip.range) { fraction in
+            let track = try await Reframer.track(media, range: clip.range, words: words) { fraction in
                 Task { @MainActor in Jobs.shared.set(projectID, .frame, progress: fraction, detail: clip.title) }
             }
             self.library.update(projectID) { project in
@@ -197,7 +198,7 @@ final class Jobs {
             // The speaker's track is worth keeping: it makes the preview match and the next export quicker.
             var clip = clip
             if clip.track == nil, (clip.framing ?? options.framing) == .speaker, options.aspect != .original {
-                let track = try await Reframer.track(media, range: clip.range) { fraction in
+                let track = try await Reframer.track(media, range: clip.range, words: words) { fraction in
                     Task { @MainActor in Jobs.shared.exporting[clipID] = fraction * 0.3 }
                 }
                 clip.track = track

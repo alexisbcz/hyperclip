@@ -73,14 +73,44 @@ nonisolated struct Clip: Codable, Hashable, Identifiable, Sendable {
     var reasons: [String] = []
     /// Overrides the export's framing for this clip.
     var framing: Framing?
-    /// Where the speaker's face is, across the clip: horizontal centers from 0 to 1, one every `trackStep` seconds.
-    var track: [Double]?
+    /// Where the crop follows the speaker to, across the clip.
+    var track: SpeakerTrack?
     var createdAt = Date()
 
     static let trackStep = 0.5
 
     var duration: Double { end - start }
     var range: ClosedRange<Double> { start...max(start, end) }
+}
+
+/// Where the crop goes across a clip: horizontal centers from 0 to 1, one every `Clip.trackStep` seconds,
+/// and the times, in seconds into the clip, where it cuts to another speaker instead of gliding.
+nonisolated struct SpeakerTrack: Codable, Hashable, Sendable {
+    var centers: [Double]
+    var cuts: [Double] = []
+
+    private enum CodingKeys: String, CodingKey { case centers, cuts }
+
+    init(centers: [Double], cuts: [Double] = []) {
+        self.centers = centers
+        self.cuts = cuts
+    }
+
+    /// Also reads tracks saved before there were cuts, which were just the centers.
+    init(from decoder: any Decoder) throws {
+        if let centers = try? decoder.singleValueContainer().decode([Double].self) {
+            self.init(centers: centers)
+        } else {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(centers: try container.decode([Double].self, forKey: .centers),
+                      cuts: try container.decodeIfPresent([Double].self, forKey: .cuts) ?? [])
+        }
+    }
+
+    /// The track for a clip shortened to `duration`.
+    func trimmed(to duration: Double) -> SpeakerTrack {
+        SpeakerTrack(centers: Array(centers.prefix(Int(duration / Clip.trackStep) + 2)), cuts: cuts.filter { $0 < duration })
+    }
 }
 
 /// A file Hyperclip exported.

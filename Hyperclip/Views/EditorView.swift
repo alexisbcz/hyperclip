@@ -139,7 +139,7 @@ struct EditorView: View {
                     if abs(clip.start - start) > 0.001 { clip.track = nil }
                     clip.start = start
                     clip.end = end
-                    if let track = clip.track { clip.track = Array(track.prefix(Int(clip.duration / Clip.trackStep) + 2)) }
+                    clip.track = clip.track?.trimmed(to: clip.duration)
                     project.update(clip)
                 }
             }

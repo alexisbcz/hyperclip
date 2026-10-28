@@ -41,6 +41,7 @@ struct PreviewView: View {
         return project.clips.first { $0.range.contains(time) }
     }
 
+    /// Read from the track every frame, unanimated, so it glides and cuts exactly where the export does.
     private func cropCenter(_ clip: Clip?) -> Double {
         guard let clip, (clip.framing ?? framing) == .speaker, let track = clip.track else { return 0.5 }
         return Reframer.center(in: track, at: studio.player.time - clip.start)
@@ -75,7 +76,6 @@ struct PreviewView: View {
             }
         }
         .frame(width: fit.width, height: fit.height)
-        .animation(.smooth(duration: 0.25), value: center)
     }
 
     private func croppedVideo(in size: CGSize, videoRatio: Double, cropRatio: Double, center: Double, clip: Clip?) -> some View {
@@ -93,7 +93,6 @@ struct PreviewView: View {
         }
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .clipShape(.rect(cornerRadius: 10))
-        .animation(.smooth(duration: 0.25), value: center)
     }
 
     private func fitted(ratio: Double, in size: CGSize) -> CGSize {
